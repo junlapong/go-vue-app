@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/gobuffalo/packr/v2"
 	"github.com/gorilla/mux"
@@ -34,13 +37,16 @@ func main() {
 	})
 
 	var api = router.PathPrefix("/api").Subrouter()
+	api.Use(loggingRequest)
+
 	api.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{ "message" : "API not found" }`))
 	})
 
-	api.HandleFunc("/ping", ping)
+	api.HandleFunc("/ping", ping).Methods("GET")
+	api.HandleFunc("/now", now).Methods("POST")
 
 	// Run server at port 8000
 	log.Println("http://localhost:8080")
@@ -66,6 +72,45 @@ func ping(w http.ResponseWriter, r *http.Request) {
 
 	// Write output
 	w.Write(output)
+}
+
+func now(w http.ResponseWriter, r *http.Request) {
+	// Read body
+	b, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(os.Stdout, "%v\n", string(b))
+
+	// Set header Content-Type
+	w.Header().Set("Content-Type", "application/json")
+
+	// Write output
+	w.Write([]byte(`{"timestamp":"` + time.Now().Format(time.RFC3339) + `"}`))
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	Status int
+}
+
+func (r *statusRecorder) writeHeader(status int) {
+	r.Status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func loggingRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		recorder := &statusRecorder{
+			ResponseWriter: w,
+			Status:         200,
+		}
+		next.ServeHTTP(recorder, r)
+		log.Printf("%7s %d %s", r.Method, recorder.Status, r.URL.Path)
+	})
 }
 
 func myIP() {

@@ -33,7 +33,8 @@ export default {
     },
     async now() {
       // this.msg = "Now";
-      await API.get("/now")
+      const data = { timestamp: new Date().getTime() };
+      await API.post("/now", data)
         .then(res => (this.msg = res.data.timestamp))
         .catch(err => (this.msg = err.message));
     }
